@@ -83,8 +83,8 @@ class UrlMappings {
             action = [POST: "computeProfile", GET: "extractProfile"]
         }
 
-        "/profile/stats.$format" (controller: "profile") {
-            action = [POST: "statsProfile", GET: "statsProfile"]
+        "/profile/projections.$format" (controller: "profile") {
+            action = [POST: "profileProjections", GET: "profileProjections"]
         }
 
         "/profile/min-projection.$format" (controller: "profile") {

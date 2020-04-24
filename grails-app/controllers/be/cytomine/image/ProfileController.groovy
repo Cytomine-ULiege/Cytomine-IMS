@@ -112,7 +112,7 @@ class ProfileController extends ImageResponseController {
             @RestApiParam(name="minSlice", type="int", paramType=RestApiParamType.QUERY, description="The minimum slice index", required=false),
             @RestApiParam(name="maxSlice", type="int", paramType=RestApiParamType.QUERY, description="The maximum slice index", required=false),
     ])
-    def statsProfile() {
+    def profileProjections() {
         String fif = URLDecoder.decode(params.fif, "UTF-8")
         Geometry geometry = sanitizeGeometry(params)
         def bounds = sanitizeBounds(params)
@@ -120,29 +120,29 @@ class ProfileController extends ImageResponseController {
         def response
         if (geometry instanceof Point) {
             Point point = (Point) geometry
-            response = profileService.pointProfileStats(
+            response = profileService.pointProfileProjections(
                     profileService.pointProfile(fif, (int) point.getX(), (int) point.getY(), bounds))
         }
         else {
-            response = profileService.geometryProfileStats(profileService.geometryProfile(fif, geometry, bounds))
+            response = profileService.geometryProfileProjections(profileService.geometryProfile(fif, geometry, bounds))
         }
 
         render response as JSON
     }
 
     def minProjection() {
-        forward(action: "projection", params: [projection: 'min'])
+        forward(action: "projectionToImage", params: [projection: 'min'])
     }
 
     def maxProjection() {
-        forward(action: "projection", params: [projection: 'max'])
+        forward(action: "projectionToImage", params: [projection: 'max'])
     }
 
     def averageProjection() {
-        forward(action: "projection", params: [projection: 'average'])
+        forward(action: "projectionToImage", params: [projection: 'average'])
     }
 
-    def projection() {
+    def projectionToImage() {
         String fif = URLDecoder.decode(params.fif, "UTF-8")
         Geometry geometry = sanitizeGeometry(params)
         if (!(geometry instanceof Polygon)) {
@@ -151,7 +151,7 @@ class ProfileController extends ImageResponseController {
 
         def bounds = sanitizeBounds(params)
         def projectionMode = params.projection
-        BufferedImage image = profileService.polygonProfileProjection(fif, geometry, bounds, projectionMode)
+        BufferedImage image = profileService.imageProfileProjection(fif, geometry, bounds, projectionMode)
 
         withFormat {
             png { responseBufferedImagePNG(image) }

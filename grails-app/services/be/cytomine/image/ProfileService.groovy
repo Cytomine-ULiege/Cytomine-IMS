@@ -646,7 +646,7 @@ class ProfileService {
         return spectrum
     }
     
-    def pointProfileStats(def pointProfile, def getMin = true, def getMax = true, def getAverage = true) {
+    def pointProfileProjections(def pointProfile, def getMin = true, def getMax = true, def getAverage = true) {
         if (getMin) pointProfile.min = pointProfile.profile.min()
         if (getMax) pointProfile.max = pointProfile.profile.max()
         if (getAverage) pointProfile.average = pointProfile.profile.sum() / pointProfile.profile.size()
@@ -654,16 +654,16 @@ class ProfileService {
         return pointProfile
     }
 
-    def geometryProfileStats(def geometryProfile, def getMin = true, def getMax = true, def getAverage = true) {
+    def geometryProfileProjections(def geometryProfile, def getMin = true, def getMax = true, def getAverage = true) {
         GParsPool.withPool {
-            geometryProfile.collectParallel { pointProfileStats(it, getMin, getMax, getAverage) }
+            geometryProfile.collectParallel { pointProfileProjections(it, getMin, getMax, getAverage) }
         }
         return geometryProfile
     }
 
-    def polygonProfileProjection(String fif, Geometry geometry, def bounds, def projectionMode) {
+    def imageProfileProjection(String fif, Geometry geometry, def bounds, def projectionMode) {
         def profile = geometryProfile(fif, geometry, bounds)
-        def projection = geometryProfileStats(profile, (projectionMode == 'min'), (projectionMode == 'max'),
+        def projection = geometryProfileProjections(profile, (projectionMode == 'min'), (projectionMode == 'max'),
                 (projectionMode == 'average'))
 
         Envelope envelope = geometry.getEnvelopeInternal()
