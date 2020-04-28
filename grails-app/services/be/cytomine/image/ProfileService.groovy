@@ -502,37 +502,33 @@ class ProfileService {
         def xmax = Math.min(xmin + width, imageWidth - 1)
         def ymax = Math.min(ytop, imageHeight - 1)
         def ymin = Math.min(ymax - height, imageHeight - 1)
-        log.debug "X: [$xmin - $xmax[ | Y: [$ymin - $ymax["
+        log.debug "X: [$xmin - $xmax[ | Y: ]$ymin - $ymax]"
 
         // We change referential for a matrix-like system used by HDF5
-        int minRow = ymin //imageHeight - ymax - 1
-        int maxRow = ymax //imageHeight - ymin - 1
+        int minRow = ymin + 1
+        int maxRow = ymax
         int minCol = xmin
-        int maxCol = xmax
-        log.debug "Col: $minCol - $maxCol | Row: $minRow - $maxRow"
+        int maxCol = xmax - 1
+        log.debug "Col: [$minCol - $maxCol] | Row: [$minRow - $maxRow]"
 
         // Find min and max block to ask in row, col dimensions
-        int minRowBlock = (int) Math.floor(minRow / blockSize)
-        int maxRowBlock = (int) Math.ceil(maxRow / blockSize)
-        int minColBlock = (int) Math.floor(minCol / blockSize)
-        int maxColBlock = (int) Math.ceil(maxCol / blockSize)
-
-        // should only happen when requesting horizontal line string on 0 row/col as floor/ceil are returning the same value in this case
-        if (minRowBlock == maxRowBlock) maxRowBlock += 1;
-        if (minColBlock == maxColBlock) maxColBlock += 1;
-        log.debug "ColBlock: [$minColBlock - $maxColBlock[ | RowBlock: [$minRowBlock - $maxRowBlock["
+        int minRowBlock = Math.max(0, (int) Math.floor(minRow / blockSize))
+        int maxRowBlock = Math.min((int) Math.floor(maxRow / blockSize), (int) Math.ceil(imageHeight / blockSize))
+        int minColBlock = Math.max(0, (int) Math.floor(minCol / blockSize))
+        int maxColBlock = Math.min((int) Math.floor(maxCol / blockSize), (int) Math.ceil(imageWidth / blockSize))
+        log.debug "ColBlock: [$minColBlock - $maxColBlock] | RowBlock: [$minRowBlock - $maxRowBlock]"
 
         def mask = getMask(bpc)
         def reader = getHDF5Reader(hdf5, bpc)
         int[] blockDimensions = [blockSize, blockSize, nSlices]
 
         def results = []
-        for (int by = minColBlock; by < maxColBlock; by++) {
-            for (int bx = minRowBlock; bx < maxRowBlock; bx++) {
+        for (int by = minColBlock; by <= maxColBlock; by++) {
+            for (int bx = minRowBlock; bx <= maxRowBlock; bx++) {
                 // We have to find the local (min, max) in row, col dimensions w.r.t. block to get only data in the bbox
                 int blockOffsetRow = bx * blockSize
                 int blockOffsetCol = by * blockSize
-                log.debug "BlockOffsetRow: $blockOffsetRow | BlockOffsetCol: $blockOffsetCol"
+                log.debug "BlockOffsetCol: $blockOffsetCol | BlockOffsetRow: $blockOffsetRow"
 
                 // Only read the block if the geometry intersects the block
                 Geometry blockBbox = gf.toGeometry(new Envelope(blockOffsetCol, blockOffsetCol + blockSize - 1,
@@ -545,20 +541,17 @@ class ProfileService {
                 log.debug "Reading block ($bx , $by)"
                 def array = reader?.readMDArrayBlock(HDF5_DATASET, blockDimensions, (long[]) [bx, by, 0])
 
-                int minLocalRow = (blockOffsetRow < minRow) ? (minRow % blockSize) : 0
-                int maxLocalRow = (blockOffsetRow + blockSize > maxRow) ? (maxRow % blockSize): blockSize
+                // Local must be in [0,255]
                 int minLocalCol = (blockOffsetCol < minCol) ? (minCol % blockSize) : 0
-                int maxLocalCol = (blockOffsetCol + blockSize > maxCol) ? (maxCol % blockSize) : blockSize
-
-                if (minLocalRow == maxLocalRow) maxLocalRow += 1
-                if (minLocalCol == maxLocalCol) maxLocalCol += 1
-
-                log.debug "LocalCol: [$minLocalCol - $maxLocalCol[ | LocalRow: ]$minLocalRow - $maxLocalRow]"
+                int maxLocalCol = (blockOffsetCol + blockSize > maxCol) ? (maxCol % blockSize) : blockSize - 1
+                int minLocalRow = (blockOffsetRow < minRow) ? (minRow % blockSize) : 0
+                int maxLocalRow = (blockOffsetRow + blockSize > maxRow) ? (maxRow % blockSize): blockSize - 1
+                log.debug "LocalCol: [$minLocalCol - $maxLocalCol] | LocalRow: [$minLocalRow - $maxLocalRow]"
 
                 // Only need precise point cover check if the whole block is not within the adjusted block bbox
                 def blockWithinGeom = blockBbox.within(geometry)
-                for (int j = minLocalCol; j < maxLocalCol; j++) {
-                    for (int i = maxLocalRow ; i > minLocalRow; i--) {
+                for (int j = minLocalCol; j <= maxLocalCol; j++) {
+                    for (int i = maxLocalRow; i >= minLocalRow; i--) {
                         def pointX = blockOffsetCol + j
                         def pointY = blockOffsetRow + i
                         if (!blockWithinGeom && !gf.createPoint(new Coordinate(pointX, pointY)).intersects(geometry)) {
@@ -577,6 +570,7 @@ class ProfileService {
 
         hdf5.close()
 
+        log.debug "Size of results : " + results.size()
         return results
     }
 
