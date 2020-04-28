@@ -32,6 +32,7 @@ import com.vividsolutions.jts.geom.Coordinate
 import com.vividsolutions.jts.geom.Envelope
 import com.vividsolutions.jts.geom.Geometry
 import com.vividsolutions.jts.geom.GeometryFactory
+import com.vividsolutions.jts.geom.LineString
 import com.vividsolutions.jts.geom.util.AffineTransformation
 import com.vividsolutions.jts.operation.predicate.RectangleIntersects
 import groovyx.gpars.GParsPool
@@ -452,24 +453,16 @@ class ProfileService {
             throw new FileNotFoundException(f.absolutePath + "does not exist.")
         }
 
-        Envelope env = geometry.getEnvelopeInternal()
-        int xleft = (int) Math.round(env.getMinX())
-        int xright = (int) Math.round(env.getMaxX())
-        int ytop = (int) Math.round(env.getMaxY())
-        int ybottom = (int) Math.round(env.getMinY())
-        int width = xright - xleft
-        int height = ytop - ybottom
-
         IHDF5Reader hdf5 = null
         try {
             hdf5 = HDF5Factory.openForReading(f)
 
             try {
                 int version = hdf5.int32().read("version")
-                return geometryProfileV2(hdf5, xleft, ytop, width, height, geometry, bounds)
+                return geometryProfileV2(hdf5, geometry, bounds)
             }
             catch(HDF5SymbolTableException ignored) {
-                return geometryProfileV1(hdf5, xleft, ytop, width, height, geometry, bounds)
+                return geometryProfileV1(hdf5, geometry, bounds)
             }
         }
         finally {
@@ -477,7 +470,7 @@ class ProfileService {
         }
     }
 
-    def geometryProfileV2(IHDF5Reader hdf5, int x, int y, int width, int height, Geometry geometry, def bounds) {
+    def geometryProfileV2(IHDF5Reader hdf5, Geometry geometry, def bounds) {
         int imageWidth = hdf5.int32().read("width")
         int imageHeight = hdf5.int32().read("height")
         int bpc = hdf5.int32().read("bpc")
@@ -487,33 +480,51 @@ class ProfileService {
         int minBound = (int) Math.max(0, bounds.min)
         int maxBound = (int) Math.min(nSlices, bounds.max)
 
-        def xmin = Math.min(x, imageWidth)
-        def xmax = Math.min(xmin + width, imageWidth)
-        def ymax = Math.min(y, imageHeight)
-        def ymin = Math.min(ymax - height, imageHeight)
-        log.debug "X: $xmin - $xmax | Y: $ymin - $ymax"
+        GeometryFactory gf = new GeometryFactory()
+        AffineTransformation at = new AffineTransformation(1.0, 0.0, 0.0, 0.0, -1.0, imageHeight - 1)
+        geometry = at.transform(geometry)
+        Geometry dilated = geometry
+
+        if (geometry instanceof LineString) {
+            geometry = geometry.buffer(0.5, 1)
+            dilated = geometry.buffer(1, 1)
+        }
+
+        Envelope env = dilated.getEnvelopeInternal()
+        int xleft = (int) Math.round(env.getMinX())
+        int xright = (int) Math.round(env.getMaxX())
+        int ytop = (int) Math.round(env.getMaxY())
+        int ybottom = (int) Math.round(env.getMinY())
+        int width = xright - xleft
+        int height = ytop - ybottom
+
+        def xmin = Math.min(xleft, imageWidth - 1)
+        def xmax = Math.min(xmin + width, imageWidth - 1)
+        def ymax = Math.min(ytop, imageHeight - 1)
+        def ymin = Math.min(ymax - height, imageHeight - 1)
+        log.debug "X: [$xmin - $xmax[ | Y: [$ymin - $ymax["
 
         // We change referential for a matrix-like system used by HDF5
-        int minRow = imageHeight - ymax
-        int maxRow = imageHeight - ymin
+        int minRow = ymin //imageHeight - ymax - 1
+        int maxRow = ymax //imageHeight - ymin - 1
         int minCol = xmin
         int maxCol = xmax
-        log.debug "Row: $minRow - $maxRow | Col: $minCol - $maxCol"
+        log.debug "Col: $minCol - $maxCol | Row: $minRow - $maxRow"
 
         // Find min and max block to ask in row, col dimensions
         int minRowBlock = (int) Math.floor(minRow / blockSize)
         int maxRowBlock = (int) Math.ceil(maxRow / blockSize)
         int minColBlock = (int) Math.floor(minCol / blockSize)
         int maxColBlock = (int) Math.ceil(maxCol / blockSize)
-        log.debug "RowBlock: $minRowBlock - $maxRowBlock | ColBlock: $minColBlock - $maxColBlock"
+
+        // should only happen when requesting horizontal line string on 0 row/col as floor/ceil are returning the same value in this case
+        if (minRowBlock == maxRowBlock) maxRowBlock += 1;
+        if (minColBlock == maxColBlock) maxColBlock += 1;
+        log.debug "ColBlock: [$minColBlock - $maxColBlock[ | RowBlock: [$minRowBlock - $maxRowBlock["
 
         def mask = getMask(bpc)
         def reader = getHDF5Reader(hdf5, bpc)
         int[] blockDimensions = [blockSize, blockSize, nSlices]
-
-        GeometryFactory gf = new GeometryFactory()
-        AffineTransformation at = new AffineTransformation(1.0, 0.0, 0.0, 0.0, -1.0, imageHeight)
-        geometry = at.transform(geometry)
 
         def results = []
         for (int bx = minRowBlock; bx < maxRowBlock; bx++) {
@@ -538,7 +549,11 @@ class ProfileService {
                 int maxLocalRow = (blockOffsetRow + blockSize > maxRow) ? (maxRow % blockSize): blockSize
                 int minLocalCol = (blockOffsetCol < minCol) ? (minCol % blockSize) : 0
                 int maxLocalCol = (blockOffsetCol + blockSize > maxCol) ? (maxCol % blockSize) : blockSize
-                log.debug "LocalRow: $minLocalRow - $maxLocalRow | LocalCol: $minLocalCol - $maxLocalRow"
+
+                if (minLocalRow == maxLocalRow) maxLocalRow += 1
+                if (minLocalCol == maxLocalCol) maxLocalCol += 1
+
+                log.debug "LocalCol: [$minLocalCol - $maxLocalCol[ | LocalRow: ]$minLocalRow - $maxLocalRow]"
 
                 // Only need precise point cover check if the whole block is not within the adjusted block bbox
                 def blockWithinGeom = blockBbox.within(geometry)
@@ -565,7 +580,7 @@ class ProfileService {
         return results
     }
 
-    def geometryProfileV1(IHDF5Reader hdf5, int x, int y, int width, int height, Geometry geometry, def bounds) {
+    def geometryProfileV1(IHDF5Reader hdf5, Geometry geometry, def bounds) {
         int[] meta = hdf5.int32().readArray("/meta")
         def blockLength = meta[0]
         def bpc = meta[1]
@@ -576,12 +591,26 @@ class ProfileService {
         def minBound = Math.max(0, bounds.min)
         def maxBound = Math.min(depth, bounds.max)
 
+        Geometry dilated = geometry
+        if (geometry instanceof LineString) {
+            geometry = geometry.buffer(0.5, 1)
+            dilated = geometry.buffer(1, 1)
+        }
+
+        Envelope env = dilated.getEnvelopeInternal()
+        int xleft = (int) Math.round(env.getMinX())
+        int xright = (int) Math.round(env.getMaxX())
+        int ytop = (int) Math.round(env.getMaxY())
+        int ybottom = (int) Math.round(env.getMinY())
+        int width = xright - xleft
+        int height = ytop - ybottom
+
         /* In V1, the input was
             - x is horizontal axis, left to right
             - y is vertical axis, top to bottom
            Now, the input is given by a cartesian coordinate system
          */
-        y = imageHeight - y
+        ytop = imageHeight - ytop
 
         def mask = getMask(bpc)
         def reader = getHDF5Reader(hdf5, bpc)
@@ -590,8 +619,8 @@ class ProfileService {
 //        AffineTransformation at = new AffineTransformation(1.0, 0.0, 0.0, 0.0, -1.0, imageHeight)
 //        geometry = at.transform(geometry)
 
-        def xmin = Math.min(x, imageWidth)
-        def ymin = Math.min(y, imageHeight)
+        def xmin = Math.min(xleft, imageWidth)
+        def ymin = Math.min(ytop, imageHeight)
         def xmax = Math.min(xmin + width + 1, imageWidth)
         def ymax = Math.min(ymin + height + 1, imageHeight)
 
