@@ -527,8 +527,8 @@ class ProfileService {
         int[] blockDimensions = [blockSize, blockSize, nSlices]
 
         def results = []
-        for (int bx = minRowBlock; bx < maxRowBlock; bx++) {
-            for (int by = minColBlock; by < maxColBlock; by++) {
+        for (int by = minColBlock; by < maxColBlock; by++) {
+            for (int bx = minRowBlock; bx < maxRowBlock; bx++) {
                 // We have to find the local (min, max) in row, col dimensions w.r.t. block to get only data in the bbox
                 int blockOffsetRow = bx * blockSize
                 int blockOffsetCol = by * blockSize
@@ -557,8 +557,8 @@ class ProfileService {
 
                 // Only need precise point cover check if the whole block is not within the adjusted block bbox
                 def blockWithinGeom = blockBbox.within(geometry)
-                for (int i = minLocalRow; i < maxLocalRow; i++) {
-                    for (int j = minLocalCol; j < maxLocalCol; j++) {
+                for (int j = minLocalCol; j < maxLocalCol; j++) {
+                    for (int i = maxLocalRow ; i > minLocalRow; i--) {
                         def pointX = blockOffsetCol + j
                         def pointY = blockOffsetRow + i
                         if (!blockWithinGeom && !gf.createPoint(new Coordinate(pointX, pointY)).intersects(geometry)) {
