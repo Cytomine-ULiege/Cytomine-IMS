@@ -701,7 +701,7 @@ class ProfileService {
         GParsPool.withPool {
             projection.eachParallel {
                 def x = it.point[0] - xleft
-                def y = height - (it.point[1] - ybottom)
+                def y = height - (it.point[1] - ybottom) - 1
                 raster.setPixel(x, y, [it[projectionMode]] as int[])
             }
         }
