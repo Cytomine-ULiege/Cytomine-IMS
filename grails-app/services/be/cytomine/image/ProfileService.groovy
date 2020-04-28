@@ -370,11 +370,11 @@ class ProfileService {
         int minBound = (int) Math.max(0, bounds.min)
         int maxBound = (int) Math.min(nSlices, bounds.max)
 
-        x = Math.min(x, imageWidth)
-        y = Math.min(y, imageHeight)
+        x = Math.min(x, imageWidth - 1)
+        y = Math.min(y, imageHeight - 1)
 
         // We change referential for a matrix-like system used by HDF5
-        int row = imageHeight - y
+        int row = imageHeight - y - 1
         int col = x
 
         def mask = getMask(bpc)
@@ -402,15 +402,15 @@ class ProfileService {
         def minBound = Math.max(0, bounds.min)
         def maxBound = Math.min(depth, bounds.max)
 
-        x = Math.min(x, imageWidth)
-        y = Math.min(y, imageHeight)
+        x = Math.min(x, imageWidth - 1)
+        y = Math.min(y, imageHeight - 1)
 
         /* In V1, the input was
             - x is horizontal axis, left to right
             - y is vertical axis, top to bottom
            Now, the input is given by a cartesian coordinate system
          */
-        def y2 = imageHeight - y
+        def y2 = imageHeight - y - 1
 
         def X = (int) Math.floor(x / blockLength)
         def Y = (int) Math.floor(y2 / blockLength)
@@ -554,7 +554,7 @@ class ProfileService {
                         for (int k = minBound; k < maxBound; k++) {
                             data << (int) (array.get(i, j, k) & mask)
                         }
-                        results << [point: [pointX, imageHeight - pointY], profile: data]
+                        results << [point: [pointX, imageHeight - pointY - 1], profile: data]
                     }
                 }
             }
