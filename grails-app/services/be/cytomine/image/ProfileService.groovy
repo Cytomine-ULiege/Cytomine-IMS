@@ -561,7 +561,7 @@ class ProfileService {
                     for (int j = minLocalCol; j < maxLocalCol; j++) {
                         def pointX = blockOffsetCol + j
                         def pointY = blockOffsetRow + i
-                        if (!blockWithinGeom && !geometry.covers(gf.createPoint(new Coordinate(pointX, pointY)))) {
+                        if (!blockWithinGeom && !gf.createPoint(new Coordinate(pointX, pointY)).intersects(geometry)) {
                             continue
                         }
 
@@ -657,7 +657,7 @@ class ProfileService {
                 def blockWithinGeom = blockBbox.within(geometry)
                 for (def i = x1; i < x2; i++) {
                     for (def j = y1; j < y2; j++) {
-                        if (!blockWithinGeom && !geometry.covers(gf.createPoint(new Coordinate(i, j)))) {
+                        if (!blockWithinGeom && !gf.createPoint(new Coordinate(i, j)).intersects(geometry)) {
                             continue
                         }
                         def res = []
