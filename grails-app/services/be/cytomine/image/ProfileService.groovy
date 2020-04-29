@@ -339,7 +339,7 @@ class ProfileService {
      * @return          A map whose first item is point coordinate and second one a list of pixel values extracted from
      * HDF5 file for the given coordinates between the given bounds.
      */
-    def pointProfile(String path, int x, int y, def bounds) {
+    def pointProfile(String path, int x, int y, def bounds, def getProfile = true, def getProjections = false) {
         File f = new File(path)
         if (!f.exists()) {
             throw new FileNotFoundException(f.absolutePath + "does not exist.")
@@ -351,10 +351,10 @@ class ProfileService {
 
             try {
                 int version = hdf5.int32().read("version")
-                return pointProfileV2(hdf5, x, y, bounds)
+                return pointProfileV2(hdf5, x, y, bounds, getProfile, getProjections)
             }
             catch (HDF5SymbolTableException ignored){
-                return pointProfileV1(hdf5, x, y, bounds)
+                return pointProfileV1(hdf5, x, y, bounds, getProfile, getProjections)
             }
         }
         finally {
@@ -362,14 +362,16 @@ class ProfileService {
         }
     }
 
-    def pointProfileV2(IHDF5Reader hdf5, int x, int y, def bounds) {
+    def pointProfileV2(IHDF5Reader hdf5, int x, int y, def bounds, def getProfile = true, def getProjections = false) {
         int imageWidth = hdf5.int32().read("width")
         int imageHeight = hdf5.int32().read("height")
         int bpc = hdf5.int32().read("bpc")
         int nSlices = hdf5.int32().read("nSlices")
+        int maxValue = 2**bpc
 
         int minBound = (int) Math.max(0, bounds.min)
         int maxBound = (int) Math.min(nSlices, bounds.max)
+        int nReturnedSlices = maxBound - minBound
 
         x = Math.min(x, imageWidth - 1)
         y = Math.min(y, imageHeight - 1)
@@ -383,25 +385,45 @@ class ProfileService {
         def array = reader?.readMDArraySlice(HDF5_DATASET, (long[]) [row, col, -1L])
 
         def data = []
+        def minimum = maxValue
+        def maximum = 0
+        def sum = 0
         for (int i = minBound; i < Math.min(array.size(), maxBound); i++) {
-            data << (int) (array.get(i) & mask)
+            def value = (int) (array.get(i) & mask)
+            if (getProjections) {
+                if (value < minimum) minimum = value
+                if (value > maximum)  maximum = value
+                sum += value
+            }
+            data << value
         }
 
         hdf5.close()
 
-        return [point: [x, y], profile: data]
+        def map =[point: [x, y]]
+        if (getProfile) {
+            map.profile = data
+        }
+        if (getProjections) {
+            map.min = minimum
+            map.max = maximum
+            map.average = sum / nReturnedSlices
+        }
+        return map
     }
 
-    def pointProfileV1(IHDF5Reader hdf5, int x, int y, def bounds) {
+    def pointProfileV1(IHDF5Reader hdf5, int x, int y, def bounds, def getProfile = true, def getProjections = false) {
         int[] meta = hdf5.int32().readArray("/meta")
         def blockLength = meta[0]
         def bpc = meta[1]
         def depth = meta[2]
         def imageWidth = meta[3]
         def imageHeight = meta[4]
+        int maxValue = 2**bpc
 
         def minBound = Math.max(0, bounds.min)
         def maxBound = Math.min(depth, bounds.max)
+        int nReturnedSlices = maxBound - minBound
 
         x = Math.min(x, imageWidth - 1)
         y = Math.min(y, imageHeight - 1)
@@ -429,13 +451,31 @@ class ProfileService {
         def mask = getMask(bpc)
 
         def data = []
+        def minimum = maxValue
+        def maximum = 0
+        def sum = 0
         for (def k = minBound; k < maxBound; k++) {
             def i = x % blockWidth
             def j = y2 % blockHeight
-            data << (int) (block[i + blockWidth * j + blockWidth * blockHeight * k] & mask)
+            def value = (int) (block[i + blockWidth * j + blockWidth * blockHeight * k] & mask)
+            if (getProjections) {
+                if (value < minimum) minimum = value
+                if (value > maximum)  maximum = value
+                sum += value
+            }
+            data << value
         }
 
-        return [point: [x, y], profile: data]
+        def map =[point: [x, y]]
+        if (getProfile) {
+            map.profile = data
+        }
+        if (getProjections) {
+            map.min = minimum
+            map.max = maximum
+            map.average = sum / nReturnedSlices
+        }
+        return map
     }
 
     /**
@@ -447,7 +487,7 @@ class ProfileService {
      * @return          A list of maps whose first item is point coordinate and second one a list of pixel values extracted from
      * HDF5 file for the given coordinates between the given bounds.
      */
-    def geometryProfile(String path, Geometry geometry, def bounds) {
+    def geometryProfile(String path, Geometry geometry, def bounds, def getProfile = true, def getProjections = false) {
         File f = new File(path)
         if (!f.exists()) {
             throw new FileNotFoundException(f.absolutePath + "does not exist.")
@@ -459,10 +499,10 @@ class ProfileService {
 
             try {
                 int version = hdf5.int32().read("version")
-                return geometryProfileV2(hdf5, geometry, bounds)
+                return geometryProfileV2(hdf5, geometry, bounds, getProfile, getProjections)
             }
             catch(HDF5SymbolTableException ignored) {
-                return geometryProfileV1(hdf5, geometry, bounds)
+                return geometryProfileV1(hdf5, geometry, bounds, getProfile, getProjections)
             }
         }
         finally {
@@ -470,15 +510,17 @@ class ProfileService {
         }
     }
 
-    def geometryProfileV2(IHDF5Reader hdf5, Geometry geometry, def bounds) {
+    def geometryProfileV2(IHDF5Reader hdf5, Geometry geometry, def bounds, def getProfile = true, def getProjections = false) {
         int imageWidth = hdf5.int32().read("width")
         int imageHeight = hdf5.int32().read("height")
         int bpc = hdf5.int32().read("bpc")
         int nSlices = hdf5.int32().read("nSlices")
         int blockSize = hdf5.int32().read("blockSize")
+        int maxValue = 2**bpc
 
         int minBound = (int) Math.max(0, bounds.min)
         int maxBound = (int) Math.min(nSlices, bounds.max)
+        int nReturnedSlices = maxBound - minBound
 
         GeometryFactory gf = new GeometryFactory()
         AffineTransformation at = new AffineTransformation(1.0, 0.0, 0.0, 0.0, -1.0, imageHeight - 1)
@@ -563,13 +605,28 @@ class ProfileService {
                         }
 
                         def data = []
+                        def minimum = maxValue
+                        def maximum = 0
+                        def sum = 0
                         for (int k = minBound; k < maxBound; k++) {
-                            data << (int) (array.get(i, j, k) & mask)
+                            def value = (int) (array.get(i, j, k) & mask)
+                            if (getProjections) {
+                                if (value < minimum) minimum = value
+                                if (value > maximum)  maximum = value
+                                sum += value
+                            }
+                            data << value
                         }
-                        localResult << [
-                                point: [pointX, imageHeight - pointY - 1],
-                                profile: data
-                        ]
+                        def map = [point: [pointX, imageHeight - pointY - 1]]
+                        if (getProfile) {
+                            map.profile = data
+                        }
+                        if (getProjections) {
+                            map.min = minimum
+                            map.max = maximum
+                            map.average = sum / nReturnedSlices
+                        }
+                        localResult << map
                     }
                 }
 
@@ -583,16 +640,18 @@ class ProfileService {
         return results
     }
 
-    def geometryProfileV1(IHDF5Reader hdf5, Geometry geometry, def bounds) {
+    def geometryProfileV1(IHDF5Reader hdf5, Geometry geometry, def bounds, def getProfile = true, def getProjections = false) {
         int[] meta = hdf5.int32().readArray("/meta")
         def blockLength = meta[0]
         def bpc = meta[1]
         def depth = meta[2]
         def imageWidth = meta[3]
         def imageHeight = meta[4]
+        int maxValue = 2**bpc
 
         def minBound = Math.max(0, bounds.min)
         def maxBound = Math.min(depth, bounds.max)
+        int nReturnedSlices = maxBound - minBound
 
         Geometry dilated = geometry
         if (geometry instanceof LineString) {
@@ -663,13 +722,31 @@ class ProfileService {
                         if (!blockWithinGeom && !gf.createPoint(new Coordinate(i, j)).intersects(geometry)) {
                             continue
                         }
-                        def res = []
+                        def data = []
+                        def minimum = maxValue
+                        def maximum = 0
+                        def sum = 0
                         for (def k = minBound; k < maxBound; k++) {
                             def ii = i % blockWidth
                             def jj = j % blockHeight
-                            res << (int) (block[ii + blockWidth * jj + blockWidth * blockHeight * k] & mask)
+                            def value = (int) (block[ii + blockWidth * jj + blockWidth * blockHeight * k] & mask)
+                            if (getProjections) {
+                                if (value < minimum) minimum = value
+                                if (value > maximum)  maximum = value
+                                sum += value
+                            }
+                            data << value
                         }
-                        spectrum << [point: [i, j], profile: res]
+                        def map = [point: [i, j]]
+                        if (getProfile) {
+                            map.profile = data
+                        }
+                        if (getProjections) {
+                            map.min = minimum
+                            map.max = maximum
+                            map.average = sum / nReturnedSlices
+                        }
+                        spectrum << map
                     }
                 }
             }
@@ -677,26 +754,9 @@ class ProfileService {
 
         return spectrum
     }
-    
-    def pointProfileProjections(def pointProfile, def getMin = true, def getMax = true, def getAverage = true) {
-        if (getMin) pointProfile.min = pointProfile.profile.min()
-        if (getMax) pointProfile.max = pointProfile.profile.max()
-        if (getAverage) pointProfile.average = pointProfile.profile.sum() / pointProfile.profile.size()
-        pointProfile.remove("profile")
-        return pointProfile
-    }
-
-    def geometryProfileProjections(def geometryProfile, def getMin = true, def getMax = true, def getAverage = true) {
-        GParsPool.withPool {
-            geometryProfile.collectParallel { pointProfileProjections(it, getMin, getMax, getAverage) }
-        }
-        return geometryProfile
-    }
 
     def imageProfileProjection(String fif, Geometry geometry, def bounds, def projectionMode) {
-        def profile = geometryProfile(fif, geometry, bounds)
-        def projection = geometryProfileProjections(profile, (projectionMode == 'min'), (projectionMode == 'max'),
-                (projectionMode == 'average'))
+        def projection = geometryProfile(fif, geometry, bounds, false, true)
 
         Envelope envelope = geometry.getEnvelopeInternal()
         def xleft = (int) Math.round(envelope.getMinX())

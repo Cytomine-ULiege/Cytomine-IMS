@@ -120,11 +120,10 @@ class ProfileController extends ImageResponseController {
         def response
         if (geometry instanceof Point) {
             Point point = (Point) geometry
-            response = profileService.pointProfileProjections(
-                    profileService.pointProfile(fif, (int) point.getX(), (int) point.getY(), bounds))
+            response = profileService.pointProfile(fif, (int) point.getX(), (int) point.getY(), bounds, false, true)
         }
         else {
-            response = profileService.geometryProfileProjections(profileService.geometryProfile(fif, geometry, bounds))
+            response = profileService.geometryProfile(fif, geometry, bounds, false, true)
         }
 
         render response as JSON
