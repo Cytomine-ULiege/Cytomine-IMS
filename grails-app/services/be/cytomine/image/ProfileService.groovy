@@ -523,8 +523,11 @@ class ProfileService {
         int[] blockDimensions = [blockSize, blockSize, nSlices]
 
         def results = []
-        for (int by = minColBlock; by <= maxColBlock; by++) {
-            for (int bx = minRowBlock; bx <= maxRowBlock; bx++) {
+        def blocks = GroovyCollections.combinations((minColBlock..maxColBlock), (minRowBlock..maxRowBlock))
+        GParsPool.withPool {
+            results = blocks.collectManyParallel { block ->Z
+                def by = block[0]
+                def bx = block[1]
                 // We have to find the local (min, max) in row, col dimensions w.r.t. block to get only data in the bbox
                 int blockOffsetRow = bx * blockSize
                 int blockOffsetCol = by * blockSize
@@ -535,7 +538,7 @@ class ProfileService {
                         blockOffsetRow, blockOffsetRow + blockSize - 1))
                 if (!RectangleIntersects.intersects(blockBbox, geometry)) {
                     log.debug "Block ($bx , $by) is skipped."
-                    continue
+                    return []
                 }
 
                 log.debug "Reading block ($bx , $by)"
@@ -550,6 +553,7 @@ class ProfileService {
 
                 // Only need precise point cover check if the whole block is not within the adjusted block bbox
                 def blockWithinGeom = blockBbox.within(geometry)
+                def localResult = []
                 for (int j = minLocalCol; j <= maxLocalCol; j++) {
                     for (int i = maxLocalRow; i >= minLocalRow; i--) {
                         def pointX = blockOffsetCol + j
@@ -562,9 +566,14 @@ class ProfileService {
                         for (int k = minBound; k < maxBound; k++) {
                             data << (int) (array.get(i, j, k) & mask)
                         }
-                        results << [point: [pointX, imageHeight - pointY - 1], profile: data]
+                        localResult << [
+                                point: [pointX, imageHeight - pointY - 1],
+                                profile: data
+                        ]
                     }
                 }
+
+                return localResult
             }
         }
 
