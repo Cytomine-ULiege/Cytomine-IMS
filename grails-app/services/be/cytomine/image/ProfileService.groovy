@@ -525,7 +525,7 @@ class ProfileService {
         def results = []
         def blocks = GroovyCollections.combinations((minColBlock..maxColBlock), (minRowBlock..maxRowBlock))
         GParsPool.withPool {
-            results = blocks.collectManyParallel { block ->Z
+            results = blocks.collectManyParallel { block ->
                 def by = block[0]
                 def bx = block[1]
                 // We have to find the local (min, max) in row, col dimensions w.r.t. block to get only data in the bbox
