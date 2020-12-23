@@ -70,7 +70,7 @@ class PyramidalTIFFFormat extends NativeFormat implements TiffInfoDetector {
         int nbTileWidth = StringUtils.countOccurrencesOf(file.getTiffInfoOutput(), "Tile Width:")
         if (nbTiffDirectory > 1 && nbTileWidth > 1)
             return true
-        else if (nbTiffDirectory == 1) { //check if very small tiff
+        else if (nbTiffDirectory == 1 && nbTileWidth == 1) { //check if very small tiff
             //get width & height from tiffinfo...
             int maxWidth = 0
             int maxHeight = 0
